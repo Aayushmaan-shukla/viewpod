@@ -63,7 +63,7 @@ const startLogStream = async () => {
   
   abortController = new AbortController();
   
-  let url = `http://localhost:8000/api/logs/${props.pod.namespace}/${props.pod.name}`;
+  let url = `http://${window.location.hostname}:8000/api/logs/${props.pod.namespace}/${props.pod.name}`;
   if (selectedContainer.value) {
     url += `?container=${selectedContainer.value}`;
   }

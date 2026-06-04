@@ -69,7 +69,7 @@ const selectPod = (pod) => {
 
 const fetchInitialPods = async () => {
   try {
-    const res = await fetch('http://localhost:8000/api/pods');
+    const res = await fetch(`http://${window.location.hostname}:8000/api/pods`);
     if (res.ok) {
       pods.value = await res.json();
     }
@@ -79,7 +79,7 @@ const fetchInitialPods = async () => {
 };
 
 const setupSSE = () => {
-  eventSource = new EventSource('http://localhost:8000/api/events');
+  eventSource = new EventSource(`http://${window.location.hostname}:8000/api/events`);
   
   eventSource.onopen = () => {
     isConnected.value = true;
