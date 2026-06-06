@@ -2,6 +2,8 @@ import asyncio
 import json
 import logging
 from typing import AsyncGenerator
+import psutil
+import shutil
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -86,6 +88,36 @@ async def stream_events():
             logger.info("Event stream cancelled by client.")
 
     return EventSourceResponse(event_generator())
+
+@app.get("/api/metrics")
+async def stream_metrics():
+    """Stream system metrics via SSE."""
+    async def metrics_generator():
+        # Initialize psutil cpu percent
+        psutil.cpu_percent(interval=None)
+        try:
+            while True:
+                cpu_percent = psutil.cpu_percent(interval=None)
+                cpu_count = psutil.cpu_count(logical=True)
+                mem = psutil.virtual_memory()
+                disk = shutil.disk_usage("/")
+                
+                data = {
+                    "cpu_usage": cpu_percent,
+                    "cpu_cores": cpu_count,
+                    "ram_used": round((mem.total - mem.available) / (1024**3), 2),
+                    "ram_total": round(mem.total / (1024**3), 2),
+                    "disk_percent": round((disk.used / disk.total) * 100, 1)
+                }
+                yield {
+                    "event": "message",
+                    "data": json.dumps(data)
+                }
+                await asyncio.sleep(2)
+        except asyncio.CancelledError:
+            pass
+
+    return EventSourceResponse(metrics_generator())
 
 @app.get("/api/logs/{namespace}/{pod_name}")
 async def stream_logs(namespace: str, pod_name: str, container: str = None):

@@ -6,6 +6,11 @@
         <span class="namespace-badge">{{ pod.namespace }}</span>
       </div>
       <div class="header-actions">
+        <div class="metrics" v-if="metrics.cpu_cores > 0">
+          <span class="metric">CPU: {{ metrics.cpu_usage }}% / {{ metrics.cpu_cores }} Cores</span>
+          <span class="metric">RAM: {{ metrics.ram_used }}GB / {{ metrics.ram_total }}GB</span>
+          <span class="metric">Disk: {{ metrics.disk_percent }}%</span>
+        </div>
         <!-- Container selector if multiple exist -->
         <select v-if="pod.containers && pod.containers.length > 1" v-model="selectedContainer" class="container-select">
           <option v-for="c in pod.containers" :key="c" :value="c">{{ c }}</option>
@@ -51,6 +56,8 @@ const logContainer = ref(null);
 const autoScroll = ref(true);
 const selectedContainer = ref(null);
 let abortController = null;
+const metrics = ref({ cpu_usage: 0, cpu_cores: 0, ram_used: 0, ram_total: 0, disk_percent: 0 });
+let metricsEventSource = null;
 
 const startLogStream = async () => {
   // Reset state
@@ -149,11 +156,23 @@ onMounted(() => {
     selectedContainer.value = props.pod.containers[0];
   }
   startLogStream();
+  
+  metricsEventSource = new EventSource(`http://${window.location.hostname}:8000/api/metrics`);
+  metricsEventSource.onmessage = (event) => {
+    try {
+      metrics.value = JSON.parse(event.data);
+    } catch (e) {
+      console.error('Failed to parse metrics:', e);
+    }
+  };
 });
 
 onUnmounted(() => {
   if (abortController) {
     abortController.abort();
+  }
+  if (metricsEventSource) {
+    metricsEventSource.close();
   }
 });
 </script>
@@ -199,6 +218,22 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.metrics {
+  display: flex;
+  gap: 8px;
+  margin-right: 8px;
+}
+
+.metric {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  background: rgba(128, 128, 128, 0.1);
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--panel-border);
+  white-space: nowrap;
 }
 
 .container-select {
