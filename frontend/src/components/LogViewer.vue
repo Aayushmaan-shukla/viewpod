@@ -26,8 +26,16 @@
     
     <div class="log-stream-container" ref="logContainer" @scroll="handleScroll">
       <div class="log-lines">
-        <div v-for="(line, index) in logs" :key="index" class="log-line">
-          {{ line }}
+        <div v-for="(log, index) in logs" :key="index" class="log-line">
+          <template v-if="log.timestamp">
+            <div class="log-timestamp">{{ log.timestamp }}</div>
+            <div class="log-indicator" :class="log.levelClass"></div>
+            <div class="log-level" :class="log.levelClass">{{ log.level }}:</div>
+            <div class="log-message">{{ log.message }}</div>
+          </template>
+          <template v-else>
+            <div class="log-message">{{ log.raw }}</div>
+          </template>
         </div>
       </div>
       <div v-if="logs.length === 0 && !error" class="loading-logs">
@@ -58,6 +66,49 @@ const selectedContainer = ref(null);
 let abortController = null;
 const metrics = ref({ cpu_usage: 0, cpu_cores: 0, ram_used: 0, ram_total: 0, disk_percent: 0 });
 let metricsEventSource = null;
+
+const parseLogLine = (rawLine) => {
+  const spaceIdx = rawLine.indexOf(' ');
+  if (spaceIdx === -1) return { raw: rawLine };
+
+  const timestampStr = rawLine.substring(0, spaceIdx);
+  let message = rawLine.substring(spaceIdx + 1);
+  
+  let dateObj = new Date(timestampStr);
+  if (isNaN(dateObj.getTime())) {
+     return { raw: rawLine };
+  }
+
+  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  const year = dateObj.getFullYear();
+  let hours = dateObj.getHours();
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  hours = hours ? hours : 12;
+  hours = String(hours).padStart(2, '0');
+  const mins = String(dateObj.getMinutes()).padStart(2, '0');
+  const secs = String(dateObj.getSeconds()).padStart(2, '0');
+  const formattedDate = `${month}/${day}/${year} ${hours}:${mins}:${secs} ${ampm}`;
+
+  let level = 'INFO';
+  let levelClass = 'info';
+
+  const klogMatch = message.match(/^([IEWF])\d{4}\s+[\d:\.]+\s+\d+\s+[^:]+:\d+\]\s*(.*)/);
+  if (klogMatch) {
+     const lvlChar = klogMatch[1];
+     if (lvlChar === 'E') { level = 'ERROR'; levelClass = 'error'; }
+     else if (lvlChar === 'W') { level = 'WARN'; levelClass = 'warn'; }
+     else if (lvlChar === 'F') { level = 'FATAL'; levelClass = 'error'; }
+     message = klogMatch[2];
+  } else {
+     const upperMsg = message.toUpperCase();
+     if (upperMsg.includes('ERROR') || upperMsg.includes('ERR')) { level = 'ERROR'; levelClass = 'error'; }
+     else if (upperMsg.includes('WARN')) { level = 'WARN'; levelClass = 'warn'; }
+  }
+
+  return { timestamp: formattedDate, level, levelClass, message, raw: rawLine };
+};
 
 const startLogStream = async () => {
   // Reset state
@@ -96,13 +147,13 @@ const startLogStream = async () => {
       // Handle partial lines
       for (let i = 0; i < lines.length - 1; i++) {
         if (lines[i].trim() !== '') {
-          logs.value.push(lines[i]);
+          logs.value.push(parseLogLine(lines[i]));
         }
       }
       // If the last line doesn't end with a newline, we technically should buffer it,
       // but for simplicity we push it if it's not empty.
       if (lines[lines.length - 1].trim() !== '') {
-        logs.value.push(lines[lines.length - 1]);
+        logs.value.push(parseLogLine(lines[lines.length - 1]));
       }
 
       if (autoScroll.value) {
@@ -276,7 +327,7 @@ onUnmounted(() => {
   overflow-y: auto;
   padding: 16px;
   font-family: var(--font-mono);
-  font-size: 0.875rem;
+  font-size: 0.75rem;
   line-height: 1.5;
   color: #e2e8f0;
 }
@@ -287,14 +338,50 @@ onUnmounted(() => {
 }
 
 .log-line {
-  white-space: pre-wrap;
-  word-break: break-all;
-  padding: 2px 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 6px 8px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+  transition: background 0.2s;
 }
 
 .log-line:hover {
   background: rgba(255, 255, 255, 0.03);
+}
+
+.log-timestamp {
+  background: rgba(255, 255, 255, 0.05);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--accent-color);
+  white-space: nowrap;
+}
+
+.log-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+.log-indicator.info { background: var(--success); box-shadow: 0 0 6px var(--success); }
+.log-indicator.warn { background: var(--warning); box-shadow: 0 0 6px var(--warning); }
+.log-indicator.error { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+
+.log-level {
+  font-weight: 600;
+}
+
+.log-level.info { color: var(--text-primary); }
+.log-level.warn { color: var(--warning); }
+.log-level.error { color: var(--danger); }
+
+.log-message {
+  flex: 1;
+  word-break: break-all;
+  white-space: pre-wrap;
 }
 
 .loading-logs, .error-msg {
